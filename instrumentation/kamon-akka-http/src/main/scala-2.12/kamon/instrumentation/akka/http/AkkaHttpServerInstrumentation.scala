@@ -109,19 +109,24 @@ class AkkaHttpServerInstrumentation extends InstrumentationBuilder {
 
 trait HasMatchingContext {
   def defaultOperationName: String
+
   def matchingContext: Seq[PathMatchingContext]
+
   def setMatchingContext(ctx: Seq[PathMatchingContext]): Unit
+
   def setDefaultOperationName(defaultOperationName: String): Unit
+
   def prependMatchingContext(matched: PathMatchingContext): Unit
+
   def popOneMatchingContext(): Unit
 }
 
 object HasMatchingContext {
 
-  case class PathMatchingContext (
-    fullPath: String,
-    matched: Matched[_]
-  )
+  case class PathMatchingContext(
+                                  fullPath: String,
+                                  matched: Matched[_]
+                                )
 
   class Mixin(var matchingContext: Seq[PathMatchingContext], var defaultOperationName: String) extends HasMatchingContext {
 
@@ -144,7 +149,9 @@ object HasMatchingContext {
 }
 
 class ResolveOperationNameOnRouteInterceptor
+
 object ResolveOperationNameOnRouteInterceptor {
+
   import akka.http.scaladsl.util.FastFuture._
 
   // We are replacing some of the basic directives here to ensure that we will resolve both the Sampling Decision and
@@ -169,31 +176,34 @@ object ResolveOperationNameOnRouteInterceptor {
   }
 
   def onComplete[T](future: => Future[T]): Directive1[Try[T]] =
-    Directive { inner => ctx =>
-      import ctx.executionContext
-      resolveOperationName(ctx)
-      future.fast.transformWith(t => inner(Tuple1(t))(ctx))
-    }
-
-  def apply[T](future: => Future[T])(implicit tupler: Tupler[T]): OnSuccessMagnet { type Out = tupler.Out } =
-    new OnSuccessMagnet {
-      type Out = tupler.Out
-      val directive = Directive[tupler.Out] { inner => ctx =>
+    Directive { inner =>
+      ctx =>
         import ctx.executionContext
         resolveOperationName(ctx)
-        future.fast.flatMap(t => inner(tupler(t))(ctx))
+        future.fast.transformWith(t => inner(Tuple1(t))(ctx))
+    }
+
+  def apply[T](future: => Future[T])(implicit tupler: Tupler[T]): OnSuccessMagnet {type Out = tupler.Out} =
+    new OnSuccessMagnet {
+      type Out = tupler.Out
+      val directive = Directive[tupler.Out] { inner =>
+        ctx =>
+          import ctx.executionContext
+          resolveOperationName(ctx)
+          future.fast.flatMap(t => inner(tupler(t))(ctx))
       }(tupler.OutIsTuple)
     }
 
   def apply[T](future: => Future[T])(implicit m: ToResponseMarshaller[T]): CompleteOrRecoverWithMagnet =
     new CompleteOrRecoverWithMagnet {
-      val directive = Directive[Tuple1[Throwable]] { inner => ctx =>
-        import ctx.executionContext
-        resolveOperationName(ctx)
-        future.fast.transformWith {
-          case Success(res)   => ctx.complete(res)
-          case Failure(error) => inner(Tuple1(error))(ctx)
-        }
+      val directive = Directive[Tuple1[Throwable]] { inner =>
+        ctx =>
+          import ctx.executionContext
+          resolveOperationName(ctx)
+          future.fast.transformWith {
+            case Success(res) => ctx.complete(res)
+            case Failure(error) => inner(Tuple1(error))(ctx)
+          }
       }
     }
 
@@ -206,18 +216,18 @@ object ResolveOperationNameOnRouteInterceptor {
     Kamon.currentContext().get(LastAutomaticOperationNameEdit.Key).foreach(lastEdit => {
       val currentSpan = Kamon.currentSpan()
 
-      if(lastEdit.allowAutomaticChanges) {
-        if(currentSpan.operationName() == lastEdit.operationName) {
-        val allMatches = requestContext.asInstanceOf[HasMatchingContext].matchingContext.reverse.map(singleMatch)
-        val operationName = allMatches.mkString("")
+      if (lastEdit.allowAutomaticChanges) {
+        if (currentSpan.operationName() == lastEdit.operationName) {
+          val allMatches = requestContext.asInstanceOf[HasMatchingContext].matchingContext.reverse.map(singleMatch)
+          val operationName = allMatches.mkString("")
 
-        if(operationName.nonEmpty) {
+          if (operationName.nonEmpty) {
             currentSpan
-            .name(operationName)
-            .takeSamplingDecision()
+              .name(operationName)
+              .takeSamplingDecision()
 
-          lastEdit.operationName = operationName
-        }
+            lastEdit.operationName = operationName
+          }
         } else {
           lastEdit.allowAutomaticChanges = false
         }
@@ -239,11 +249,11 @@ object ResolveOperationNameOnRouteInterceptor {
         consumedSegment
       case tuple: Product =>
         val values = tuple.productIterator.toList map {
-          case Some(x)    => List(x.toString)
-          case None       => Nil
+          case Some(x) => List(x.toString)
+          case None => Nil
           case long: Long => List(long.toString, long.toHexString)
-          case int: Int   => List(int.toString, int.toHexString)
-          case a: Any     => List(a.toString)
+          case int: Int => List(int.toString, int.toHexString)
+          case a: Any => List(a.toString)
         }
         values.flatten.fold(consumedSegment) { (full, value) =>
           val r = "(?i)(^|/)" + Pattern.quote(value) + "($|/)"
@@ -265,9 +275,9 @@ object ResolveOperationNameOnRouteInterceptor {
   *
   */
 class LastAutomaticOperationNameEdit(
-  @volatile var operationName: String,
-  @volatile var allowAutomaticChanges: Boolean
-)
+                                      @volatile var operationName: String,
+                                      @volatile var allowAutomaticChanges: Boolean
+                                    )
 
 object LastAutomaticOperationNameEdit {
   val Key = Context.key[Option[LastAutomaticOperationNameEdit]]("laone", None)
@@ -287,7 +297,9 @@ object RequestContextCopyInterceptor {
 }
 
 class PathDirectivesRawPathPrefixInterceptor
+
 object PathDirectivesRawPathPrefixInterceptor {
+
   import BasicDirectives._
 
   def rawPathPrefix[T](@Argument(0) matcher: PathMatcher[T]): Directive[T] = {
@@ -309,7 +321,7 @@ object PathDirectivesRawPathPrefixInterceptor {
       case (ctx, Matched(rest, values)) =>
         tprovide(values) & mapRequestContext(_ withUnmatchedPath rest) & mapRouteResult { routeResult =>
 
-          if(routeResult.isInstanceOf[Rejected])
+          if (routeResult.isInstanceOf[Rejected])
             ctx.asInstanceOf[HasMatchingContext].popOneMatchingContext()
 
           routeResult
@@ -324,7 +336,7 @@ object PathDirectivesRawPathPrefixInterceptor {
 object Http2BlueprintInterceptor {
 
   case class HandlerWithEndpoint(interface: String, port: Int, handler: HttpRequest => Future[HttpResponse])
-      extends (HttpRequest => Future[HttpResponse]) {
+    extends (HttpRequest => Future[HttpResponse]) {
 
     override def apply(request: HttpRequest): Future[HttpResponse] = {
       var spanBuilder: SpanBuilder = null
@@ -351,11 +363,11 @@ object Http2BlueprintInterceptor {
       }
     }
   }
-  }
+
 
   @RuntimeType
   def handleWithStreamIdHeader(@Argument(1) handler: HttpRequest => Future[HttpResponse],
-    @SuperCall zuper: Callable[Flow[HttpRequest, HttpResponse, NotUsed]]): Flow[HttpRequest, HttpResponse, NotUsed] = {
+                               @SuperCall zuper: Callable[Flow[HttpRequest, HttpResponse, NotUsed]]): Flow[HttpRequest, HttpResponse, NotUsed] = {
 
     handler match {
       case HandlerWithEndpoint(interface, port, _) =>
