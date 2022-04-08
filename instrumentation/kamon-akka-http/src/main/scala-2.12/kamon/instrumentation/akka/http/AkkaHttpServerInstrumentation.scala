@@ -340,14 +340,14 @@ object Http2BlueprintInterceptor {
 
     override def apply(request: HttpRequest): Future[HttpResponse] = {
       var spanBuilder: SpanBuilder = null
+      val traceKey = Context.key[String]("parentTraceId", "undefined")
+      var traceIdVal = ""
       request.header[Upgrade] match {
         case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
           donothing()
         case _ => {
           val traceId = request.headers.filter(header => header.name() == "traceid").headOption
-          if (traceId.isDefined) {
-            Context.key[String]("parentTraceId", traceId.get.value())
-          }
+          traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefinded"
           spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
             .tag("protocol", "http2->1")
             .tag("component", "http-server")
@@ -361,9 +361,11 @@ object Http2BlueprintInterceptor {
       }
 
       Kamon.runWithSpan(spanBuilder.start(), finishSpan = true) {
-        val response = handler(request)
-        // TODO: 未获取返回内容
-        response
+        Kamon.runWithContextEntry(traceKey, traceIdVal) {
+          val response = handler(request)
+          // TODO: 未获取返回内容
+          response
+        }
       }
     }
   }

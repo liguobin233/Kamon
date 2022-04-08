@@ -22,8 +22,6 @@ object AkkaGrpcClientInstrumentation {
     responseFuture.onComplete {
       case Success(r) => {
         Kamon.currentSpan().finish()
-
-        Future(r)(CallingThreadExecutionContext)
       }
       case Failure(t) => Kamon.currentSpan().fail(t).finish()
     }(CallingThreadExecutionContext)
