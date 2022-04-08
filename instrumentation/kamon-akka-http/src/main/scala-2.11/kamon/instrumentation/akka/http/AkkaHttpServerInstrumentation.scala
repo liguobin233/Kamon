@@ -297,9 +297,37 @@ object PathDirectivesRawPathPrefixInterceptor {
 object Http2BlueprintInterceptor {
 
   case class HandlerWithEndpoint(interface: String, port: Int, handler: HttpRequest => Future[HttpResponse])
-      extends (HttpRequest => Future[HttpResponse]) {
+    extends (HttpRequest => Future[HttpResponse]) {
 
-    override def apply(request: HttpRequest): Future[HttpResponse] = handler(request)
+    override def apply(request: HttpRequest): Future[HttpResponse] = {
+      var spanBuilder: SpanBuilder = null
+      val traceKey = Context.key[String]("parentTraceId", "undefined")
+      var traceIdVal = ""
+      request.header[Upgrade] match {
+        case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
+          donothing()
+        case _ => {
+          val traceId = request.headers.filter(header => header.name() == "traceid").headOption
+          traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefinded"
+          spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
+            .tag("protocol", "http2->1")
+            .tag("component", "http-server")
+            .tag("http.method", request.method.value)
+            .tag("path", s"${request._2}")
+        }
+      }
+
+      def donothing(): Unit = {
+
+      }
+
+      Kamon.runWithSpan(spanBuilder.start(), finishSpan = true) {
+        Kamon.runWithContextEntry(traceKey, traceIdVal) {
+          val response = handler(request)
+          response
+        }
+      }
+    }
   }
 
   @RuntimeType

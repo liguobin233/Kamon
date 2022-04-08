@@ -363,7 +363,6 @@ object Http2BlueprintInterceptor {
       Kamon.runWithSpan(spanBuilder.start(), finishSpan = true) {
         Kamon.runWithContextEntry(traceKey, traceIdVal) {
           val response = handler(request)
-          // TODO: 未获取返回内容
           response
         }
       }
