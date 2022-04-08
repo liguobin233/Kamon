@@ -344,6 +344,10 @@ object Http2BlueprintInterceptor {
         case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
           donothing()
         case _ => {
+          val traceId = request.headers.filter(header => header.name() == "traceId").headOption
+          if (traceId.isDefined) {
+            Context.key[String]("parentTraceId", traceId.get.value())
+          }
           spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
             .tag("protocol", "http2->1")
             .tag("component", "http-server")
