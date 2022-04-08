@@ -344,7 +344,7 @@ object Http2BlueprintInterceptor {
         case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
           donothing()
         case _ => {
-          val traceId = request.headers.filter(header => header.name() == "traceId").headOption
+          val traceId = request.headers.filter(header => header.name() == "traceid").headOption
           if (traceId.isDefined) {
             Context.key[String]("parentTraceId", traceId.get.value())
           }
