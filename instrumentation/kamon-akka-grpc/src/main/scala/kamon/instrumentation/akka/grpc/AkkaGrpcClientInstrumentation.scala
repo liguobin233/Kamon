@@ -1,31 +1,42 @@
 package kamon.instrumentation.akka.grpc
 
 import kamon.Kamon
-import kamon.trace.SpanBuilder
+import kamon.context.Storage
+import kamon.util.CallingThreadExecutionContext
 import kanela.agent.api.instrumentation.InstrumentationBuilder
 import kanela.agent.libs.net.bytebuddy.asm.Advice
 
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
-class AkkaGrpcClientInstrumentation[I, O] extends InstrumentationBuilder {
+
+class AkkaGrpcClientInstrumentation[I] extends InstrumentationBuilder {
   onType("akka.grpc.internal.ScalaUnaryRequestBuilder")
-    .advise(method("invoke"), AkkaGrpcClientInstrumentation)
+    .advise(method("invoke"), classOf[AkkaGrpcClientInstrumentationAdvise])
 
-
+  onType("akka.grpc.internal.MetadataImpl").advise(method("toGoogleGrpcMetadata"), TestXXX)
 }
 
 object AkkaGrpcClientInstrumentation {
-  @Advice.OnMethodEnter()
-  def enter[I](@Advice.Argument(0) request: I): Unit = {
-    val requestStr = request.toString
-    val serviceName = requestStr.substring(0, requestStr.indexOf("("))
-    var spanBuilder: SpanBuilder = null
-    if (Kamon.currentSpan().isEmpty) {
-      Kamon.spanBuilder("grpc " + serviceName).start()
-    }
-    Kamon.currentSpan()
-      .tagMetrics("component", "akka.grpc.client")
-      .tagMetrics("rpc.system", "grpc")
-      .tagMetrics("rpc.service", serviceName)
-      .takeSamplingDecision()
+  def onExit[I, R](@Advice.Argument(0) request: I, @Advice.Local("scope") scope: Storage.Scope, @Advice.Return responseFuture: Future[R]): Future[R] = {
+    responseFuture.onComplete {
+      case Success(r) => {
+        Kamon.currentSpan().finish()
+
+        Future(r)(CallingThreadExecutionContext)
+      }
+      case Failure(t) => Kamon.currentSpan().fail(t).finish()
+    }(CallingThreadExecutionContext)
+    scope.close()
+    responseFuture
+  }
+}
+
+object TestXXX {
+  @Advice.OnMethodExit
+  def onExit[I, R](@Advice.Return metaData: io.grpc.Metadata): io.grpc.Metadata = {
+    //add traceId
+    metaData.put(io.grpc.Metadata.Key.of("traceId", io.grpc.Metadata.ASCII_STRING_MARSHALLER), Kamon.currentSpan().trace.id.toString)
+    metaData
   }
 }
