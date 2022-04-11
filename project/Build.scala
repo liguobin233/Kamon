@@ -1,23 +1,21 @@
-import sbt.{Configuration, _}
-import Keys._
-import sbt.librarymanagement.{Configuration, Configurations}
-import Configurations.Compile
-import sbtassembly.AssemblyPlugin
-import sbtassembly.AssemblyPlugin.autoImport.{MergeStrategy, assembleArtifact, assembly, assemblyExcludedJars, assemblyMergeStrategy, assemblyOption, assemblyPackageScala}
-import java.util.Calendar
-
-import Def.Initialize
 import com.jsuereth.sbtpgp.PgpKeys.useGpgPinentry
-import sbtrelease.ReleasePlugin.autoImport._
-import de.heikoseeberger.sbtheader.HeaderPlugin.autoImport._
-import sbtrelease.ReleaseStateTransformations._
-
-import scala.sys.process._
 import com.lightbend.sbt.javaagent.JavaAgent.JavaAgentKeys.javaAgents
+import de.heikoseeberger.sbtheader.HeaderPlugin.autoImport._
 import de.heikoseeberger.sbtheader.{HeaderPlugin, License}
+import sbt.Def.Initialize
+import sbt.Keys._
+import sbt.librarymanagement.Configurations.Compile
 import sbt.plugins.JvmPlugin
+import sbt.{Configuration, _}
+import sbtassembly.AssemblyPlugin
+import sbtassembly.AssemblyPlugin.autoImport.{MergeStrategy, assembly, assemblyMergeStrategy, assemblyOption}
 import sbtdynver.DynVerPlugin.autoImport.dynver
+import sbtrelease.ReleasePlugin.autoImport._
+import sbtrelease.ReleaseStateTransformations._
 import xerial.sbt.Sonatype.SonatypeKeys._
+
+import java.util.Calendar
+import scala.sys.process._
 
 object BaseProject extends AutoPlugin {
 
@@ -119,7 +117,7 @@ object BaseProject extends AutoPlugin {
     Test / parallelExecution := false,
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaCheck, "-F", "2.5"),
     startYear := Some(2013),
-    organization := "io.kamon",
+    organization := "io.github.mofei100",
     organizationName := "The Kamon Project",
     headerLicense := licenseTemplate(startYear.value),
     autoImport.kanelaAgentJar := findKanelaAgentJar.value,
