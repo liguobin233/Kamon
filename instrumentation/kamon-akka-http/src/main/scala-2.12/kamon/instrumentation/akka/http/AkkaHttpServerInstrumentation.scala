@@ -354,7 +354,9 @@ object Http2BlueprintInterceptor {
             .tag("http.method", request.method.value)
             .tag("path", s"${request._2}")
           if (traceIdVal != "" && traceIdVal != "undefined" && traceIdVal != "null") {
-            spanBuilder.traceId(Identifier(traceIdVal, traceIdVal.getBytes()))
+            spanBuilder
+              .traceId(Identifier(traceIdVal, traceIdVal.getBytes()))
+              .ignoreParentFromContext()
           }
         }
       }
