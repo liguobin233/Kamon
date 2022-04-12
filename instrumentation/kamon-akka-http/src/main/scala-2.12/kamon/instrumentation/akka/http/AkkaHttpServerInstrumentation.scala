@@ -42,7 +42,7 @@ import akka.http.scaladsl.model.headers.Upgrade
 import akka.http.scaladsl.server.RouteResult.Rejected
 import akka.stream.scaladsl.Flow
 import kamon.context.Context
-import kamon.trace.SpanBuilder
+import kamon.trace.{Identifier, SpanBuilder}
 import kanela.agent.libs.net.bytebuddy.asm.Advice
 import kanela.agent.libs.net.bytebuddy.matcher.ElementMatchers.isPublic
 
@@ -347,12 +347,15 @@ object Http2BlueprintInterceptor {
           donothing()
         case _ => {
           val traceId = request.headers.filter(header => header.name() == "traceid").headOption
-          traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefinded"
+          traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefined"
           spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
             .tag("protocol", "http2->1")
             .tag("component", "http-server")
             .tag("http.method", request.method.value)
             .tag("path", s"${request._2}")
+          if (traceIdVal != "" && traceIdVal != "undefined" && traceIdVal != "null") {
+            spanBuilder.traceId(Identifier(traceIdVal, traceIdVal.getBytes()))
+          }
         }
       }
 
