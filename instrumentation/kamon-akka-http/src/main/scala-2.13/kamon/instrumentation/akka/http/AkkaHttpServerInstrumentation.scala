@@ -27,6 +27,7 @@ import akka.http.scaladsl.server.RouteResult.Rejected
 import akka.stream.scaladsl.Flow
 import kamon.context.Context
 import kamon.trace.{Identifier, SpanBuilder}
+import kamon.util.CallingThreadExecutionContext
 import kanela.agent.libs.net.bytebuddy.asm.Advice
 import kanela.agent.libs.net.bytebuddy.matcher.ElementMatchers.isPublic
 
@@ -323,7 +324,7 @@ object Http2BlueprintInterceptor {
     override def apply(request: HttpRequest): Future[HttpResponse] = {
       var spanBuilder: SpanBuilder = null
       val traceKey = Context.key[String]("parentTraceId", "undefined")
-      var traceIdVal = ""
+      var traceIdVal: String = ""
       request.header[Upgrade] match {
         case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
           donothing()
@@ -347,10 +348,15 @@ object Http2BlueprintInterceptor {
 
       }
 
-      Kamon.runWithSpan(spanBuilder.start(), finishSpan = true) {
+      Kamon.runWithSpan(spanBuilder.start(), finishSpan = false) {
         Kamon.runWithContextEntry(traceKey, traceIdVal) {
           val response = handler(request)
-          // TODO: 未获取返回内容
+          response.onComplete {
+            case Success(r) => {
+              Kamon.currentSpan().finish()
+            }
+            case Failure(t) => Kamon.currentSpan().fail(t).finish()
+          }(CallingThreadExecutionContext)
           response
         }
       }
