@@ -330,7 +330,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
           if (parent.isRemote && _kind == Span.Kind.Server && _joinRemoteParentsWithSameSpanID)
             (parent.id, parent.parentId)
           else if (_parentSpanId.isDefined) {
-            (identifierScheme.spanIdFactory.generate(), parent.id)
+            (identifierScheme.spanIdFactory.generate(), _parentSpanId)
           }
           else
             (identifierScheme.spanIdFactory.generate(), parent.id)
