@@ -142,7 +142,6 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
   }
 
 
-
   private class MutableSpanBuilder(initialOperationName: String) extends SpanBuilder {
     private val _spanTags = TagSet.builder()
     private val _metricTags = TagSet.builder()
@@ -159,6 +158,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
     private var _suggestedTraceId: Identifier = Identifier.Empty
     private var _suggestedSamplingDecision: Option[SamplingDecision] = None
     private var _kind: Span.Kind = Span.Kind.Unknown
+    private var _parentSpanId: Option[String] = Option.empty
 
     override def operationName(): String = _name
 
@@ -237,7 +237,8 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
     }
 
     override def fail(cause: Throwable, errorMessage: String): SpanBuilder = {
-      fail(errorMessage); fail(cause)
+      fail(errorMessage);
+      fail(cause)
       this
     }
 
@@ -299,7 +300,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
       // Having a scheduler is a proxy to knowing whether Kamon has been initialized or not. We might consider
       // introducing some sort if "isActive" state if we start having more variables that only need to be defined
       // when Kamon has started.
-      if(_scheduler.isEmpty) {
+      if (_scheduler.isEmpty) {
         Span.Empty
       }
       else {
@@ -315,7 +316,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
         }
 
 
-      val context = _context.getOrElse(contextStorage.currentContext())
+        val context = _context.getOrElse(contextStorage.currentContext())
         if (_tagWithUpstreamService) {
           context.getTag(option(TagKeys.UpstreamName)).foreach(upstreamName => {
             _metricTags.add(TagKeys.UpstreamName, upstreamName)
@@ -328,6 +329,9 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
         val (id, parentId) =
           if (parent.isRemote && _kind == Span.Kind.Server && _joinRemoteParentsWithSameSpanID)
             (parent.id, parent.parentId)
+          else if (_parentSpanId.isDefined) {
+            (identifierScheme.spanIdFactory.generate(), parent.id)
+          }
           else
             (identifierScheme.spanIdFactory.generate(), parent.id)
 
@@ -372,7 +376,19 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
       _suggestedSamplingDecision.getOrElse(_sampler.decide(this))
 
     private def suggestedOrGeneratedTraceId(): Identifier =
-      if(_suggestedTraceId.isEmpty) identifierScheme.traceIdFactory.generate() else _suggestedTraceId
+      if (_suggestedTraceId.isEmpty) identifierScheme.traceIdFactory.generate() else _suggestedTraceId
+
+    /**
+      * 设置父spanId
+      * 适用于无法获取父span对象时
+      *
+      * @param parentId
+      * @return
+      */
+    override def setParentId(parentId: Option[String]): SpanBuilder = {
+      _parentSpanId = parentId
+      this
+    }
   }
 
 
@@ -383,11 +399,11 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
     try {
       val traceConfig = newConfig.getConfig("kamon.trace")
       val sampler = traceConfig.getString("sampler") match {
-        case "always"     => ConstantSampler.Always
-        case "never"      => ConstantSampler.Never
-        case "random"     => RandomSampler(traceConfig.getDouble("random-sampler.probability"))
-        case "adaptive"   => AdaptiveSampler()
-        case fqcn         =>
+        case "always" => ConstantSampler.Always
+        case "never" => ConstantSampler.Never
+        case "random" => RandomSampler(traceConfig.getDouble("random-sampler.probability"))
+        case "adaptive" => AdaptiveSampler()
+        case fqcn =>
 
           // We assume that any other value must be a FQCN of a Sampler implementation and try to build an
           // instance from it.
@@ -412,7 +428,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
           }
       }
 
-      if(sampler.isInstanceOf[AdaptiveSampler]) {
+      if (sampler.isInstanceOf[AdaptiveSampler]) {
         schedulerAdaptiveSampling()
       } else {
         _adaptiveSamplerSchedule.foreach(_.cancel(false))
@@ -438,13 +454,13 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
         latencyThresholdNanos = traceConfig.getDuration("local-tail-sampler.latency-threshold").toNanos
       )
 
-      if(localTailSamplerSettings.enabled && delayedSpanReportingDelay.isZero) {
+      if (localTailSamplerSettings.enabled && delayedSpanReportingDelay.isZero) {
         _logger.warn(
           "Enabling local tail sampling without a span-reporting-delay setting will probably lead to incomplete " +
-          "traces. Consider setting span-reporting-delay to a value slightly above your application's requests timeout")
+            "traces. Consider setting span-reporting-delay to a value slightly above your application's requests timeout")
       }
 
-      if(_traceReporterQueueSize != traceReporterQueueSize) {
+      if (_traceReporterQueueSize != traceReporterQueueSize) {
         // By simply changing the buffer we might be dropping Spans that have not been collected yet by the reporters.
         // Since reconfigures are very unlikely to happen beyond application startup this might not be a problem.
         // If we eventually decide to keep those possible Spans around then we will need to change the queue type to
@@ -471,7 +487,7 @@ class Tracer(initialConfig: Config, clock: Clock, contextStorage: ContextStorage
   }
 
   private def schedulerAdaptiveSampling(): Unit = {
-    if(_sampler.isInstanceOf[AdaptiveSampler] && _adaptiveSamplerSchedule.isEmpty && _scheduler.nonEmpty)
+    if (_sampler.isInstanceOf[AdaptiveSampler] && _adaptiveSamplerSchedule.isEmpty && _scheduler.nonEmpty)
       _adaptiveSamplerSchedule = Some(_scheduler.get.scheduleAtFixedRate(
         adaptiveSamplerAdaptRunnable(), 1, 1, TimeUnit.SECONDS
       ))
@@ -509,8 +525,8 @@ object Tracer {
   }
 
   private[trace] case class LocalTailSamplerSettings(
-    enabled: Boolean,
-    errorCountThreshold: Int,
-    latencyThresholdNanos: Long
-  )
+                                                      enabled: Boolean,
+                                                      errorCountThreshold: Int,
+                                                      latencyThresholdNanos: Long
+                                                    )
 }

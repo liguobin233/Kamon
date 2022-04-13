@@ -342,12 +342,15 @@ object Http2BlueprintInterceptor {
       var spanBuilder: SpanBuilder = null
       val traceKey = Context.key[String]("parentTraceId", "undefined")
       var traceIdVal = ""
+      var parentSpanIdVal: Option[String] = Option.empty
       request.header[Upgrade] match {
         case Some(upgrade) if upgrade.protocols.exists(_.name equalsIgnoreCase "h2c") =>
           donothing()
         case _ => {
           val traceId = request.headers.filter(header => header.name() == "traceid").headOption
+          val parentSpanId = request.headers.filter(header => header.name() == "spanid").headOption
           traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefined"
+          parentSpanIdVal = if (parentSpanId.isDefined) Option(parentSpanId.get.value()) else Option.empty
           spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
             .tag("protocol", "http2->1")
             .tag("component", "http-server")
@@ -356,6 +359,7 @@ object Http2BlueprintInterceptor {
           if (traceIdVal != "" && traceIdVal != "undefined" && traceIdVal != "null") {
             spanBuilder
               .traceId(Identifier.Scheme.Single.traceIdFactory.from(traceIdVal))
+              .setParentId(parentSpanIdVal)
               .ignoreParentFromContext()
           }
         }

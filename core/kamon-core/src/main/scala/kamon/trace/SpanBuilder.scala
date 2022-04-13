@@ -159,6 +159,15 @@ trait SpanBuilder extends Sampler.Operation {
   def asChildOf(parent: Span): SpanBuilder
 
   /**
+    * 设置父spanId
+    * 适用于无法获取父span对象时
+    *
+    * @param parentId
+    * @return
+    */
+  def setParentId(parentId: Option[String]): SpanBuilder
+
+  /**
     * Sets the context to be used when looking up tags and a possible parent Span if no parent is explicitly provided.
     * If no specific Context is provided the builder implementation falls back to the current Kamon Context.
     */
