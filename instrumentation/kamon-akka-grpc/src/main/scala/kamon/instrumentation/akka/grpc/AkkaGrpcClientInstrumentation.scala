@@ -34,7 +34,7 @@ object TestXXX {
   @Advice.OnMethodExit
   def onExit[I, R](@Advice.Return metaData: io.grpc.Metadata): io.grpc.Metadata = {
     //add traceId
-    metaData.put(io.grpc.Metadata.Key.of("traceid", io.grpc.Metadata.ASCII_STRING_MARSHALLER), Kamon.currentSpan().trace.id.toString)
+    metaData.put(io.grpc.Metadata.Key.of("traceid", io.grpc.Metadata.ASCII_STRING_MARSHALLER), Kamon.currentSpan().trace.id.string)
     metaData.put(io.grpc.Metadata.Key.of("spanid", io.grpc.Metadata.ASCII_STRING_MARSHALLER), Kamon.currentSpan().id.string)
     metaData
   }
