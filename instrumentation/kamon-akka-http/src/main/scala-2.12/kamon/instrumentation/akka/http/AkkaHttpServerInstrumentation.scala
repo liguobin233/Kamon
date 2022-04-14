@@ -43,6 +43,7 @@ import akka.http.scaladsl.server.RouteResult.Rejected
 import akka.stream.scaladsl.Flow
 import kamon.context.Context
 import kamon.trace.{Identifier, SpanBuilder}
+import kamon.util.CallingThreadExecutionContext
 import kanela.agent.libs.net.bytebuddy.asm.Advice
 import kanela.agent.libs.net.bytebuddy.matcher.ElementMatchers.isPublic
 
@@ -369,9 +370,15 @@ object Http2BlueprintInterceptor {
 
       }
 
-      Kamon.runWithSpan(spanBuilder.start(), finishSpan = true) {
+      Kamon.runWithSpan(spanBuilder.start(), finishSpan = false) {
         Kamon.runWithContextEntry(traceKey, traceIdVal) {
           val response = handler(request)
+          response.onComplete {
+            case Success(r) => {
+              Kamon.currentSpan().finish()
+            }
+            case Failure(t) => Kamon.currentSpan().fail(t).finish()
+          }(CallingThreadExecutionContext)
           response
         }
       }
