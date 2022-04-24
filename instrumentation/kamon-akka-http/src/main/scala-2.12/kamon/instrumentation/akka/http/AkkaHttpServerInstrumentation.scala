@@ -350,7 +350,7 @@ object Http2BlueprintInterceptor {
 
     override def apply(request: HttpRequest): Future[HttpResponse] = {
       if (httpServerInstruments == null) {
-        httpServerInstruments = HttpServerMetrics.of("http-server", interface, port)
+        httpServerInstruments = HttpServerMetrics.of("ascendex-http-server", interface, port)
       }
       var spanBuilder: SpanBuilder = null
       val traceKey = Context.key[String]("parentTraceId", "undefined")
