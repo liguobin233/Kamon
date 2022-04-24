@@ -36,21 +36,24 @@ object AsyncHttpClientBackendInterceptor {
 
         traceIdVal = traceId.map(_.value)
 
-        val spanBuilder = Kamon.spanBuilder(request.method.method)
+        val path = s"${request.uri.path.mkString("/")}"
+        val spanBuilder = Kamon.spanBuilder(path)
           .tag("protocol", "http2->1")
           .tag("component", "sttp.client3")
           .tag("http.method", request.method.method)
-          .tag("path", s"${request.uri.path.mkString("/")}")
+          .tag("path", path)
 
         traceIdVal.foreach(tid => {
           spanBuilder
             .traceId(Identifier.Scheme.Single.traceIdFactory.from(tid))
             .setParentId(parentSpanIdVal)
         })
-        span = spanBuilder.start()
-        Kamon.runWithContext(Kamon.currentContext().withEntry(Span.Key, span)) {
-          zcall
+
+        if (!Kamon.currentSpan().isEmpty) {
+          spanBuilder.asChildOf(Kamon.currentSpan())
         }
+        span = spanBuilder.start().takeSamplingDecision()
+        zcall
       case x =>
         superCall.call()
     }

@@ -22,7 +22,7 @@ import scala.util.{ Failure, Success }
 class SttpClientInstrumentation extends InstrumentationBuilder {
 
   onType("sttp.client3.HttpURLConnectionBackend")
-    .intercept(method("send"), classOf[HttpURLConnectionBackendInterceptor])
+    .advise(method("send"), classOf[RequestSendAdvice])
 
   onType("sttp.client3.asynchttpclient.AsyncHttpClientBackend")
     .intercept(method("send"), classOf[AsyncHttpClientBackendInterceptor])
@@ -42,6 +42,10 @@ object SttpClientInstrumentation {
     val httpClientConfig = Kamon.config().getConfig("kamon.instrumentation.sttp.client3")
     httpClientInstrumentation = HttpClientInstrumentation.from(httpClientConfig, "sttp.client3")
     httpClientInstrumentation
+  }
+
+  def getHandler[T, R](request: Request[T, R]): RequestHandler[Request[T, R]] = {
+    httpClientInstrumentation.createHandler[Request[T, R]](toRequestBuilder[T, R](request), Kamon.currentContext())
   }
 
   def getHandler[T, R](request: Request[T, R], span: Span): RequestHandler[Request[T, R]] = {
@@ -65,22 +69,6 @@ object SttpClientInstrumentation {
 
       override def build(): Request[T, R] = request.copy(headers = request.headers ++ _extraHeaders)
     }
-
-  def handleResponse[T, R](response: Response[T], handler: RequestHandler[Request[T, R]]): client3.Response[T] = {
-    try {
-
-      handler.processResponse(toResponseBuilder(response))
-
-    } catch {
-      case e: Exception =>
-        handler.span.fail(e)
-        throw e
-    } finally {
-      handler.span.finish()
-    }
-
-    response
-  }
 
   def handleResponse[T, R](response: Future[Response[T]], handler: RequestHandler[Request[T, R]]): Future[client3.Response[T]] = {
     response.onComplete {
