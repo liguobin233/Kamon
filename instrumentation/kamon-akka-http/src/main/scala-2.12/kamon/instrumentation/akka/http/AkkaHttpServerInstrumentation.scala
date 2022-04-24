@@ -42,6 +42,13 @@ import akka.http.scaladsl.model.headers.Upgrade
 import akka.http.scaladsl.server.RouteResult.Rejected
 import akka.stream.scaladsl.Flow
 import kamon.context.Context
+import kamon.instrumentation.http.HttpServerMetrics
+import kamon.instrumentation.http.HttpServerMetrics.HttpServerInstruments
+import kamon.instrumentation.tag.TagKeys
+import kamon.instrumentation.trace.SpanTagger
+import kamon.instrumentation.trace.SpanTagger.TagMode
+import kamon.tag.Lookups.option
+import kamon.trace.Trace.SamplingDecision
 import kamon.trace.{Identifier, SpanBuilder}
 import kamon.util.CallingThreadExecutionContext
 import kanela.agent.libs.net.bytebuddy.asm.Advice
@@ -336,10 +343,15 @@ object PathDirectivesRawPathPrefixInterceptor {
 
 object Http2BlueprintInterceptor {
 
+  var httpServerInstruments: HttpServerInstruments = null
+
   case class HandlerWithEndpoint(interface: String, port: Int, handler: HttpRequest => Future[HttpResponse])
     extends (HttpRequest => Future[HttpResponse]) {
 
     override def apply(request: HttpRequest): Future[HttpResponse] = {
+      if (httpServerInstruments == null) {
+        httpServerInstruments = HttpServerMetrics.of("http-server", interface, port)
+      }
       var spanBuilder: SpanBuilder = null
       val traceKey = Context.key[String]("parentTraceId", "undefined")
       var traceIdVal = ""
@@ -352,17 +364,18 @@ object Http2BlueprintInterceptor {
           val parentSpanId = request.headers.filter(header => header.name() == "spanid").headOption
           traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefined"
           parentSpanIdVal = if (parentSpanId.isDefined) Option(parentSpanId.get.value()) else Option.empty
-          spanBuilder = Kamon.spanBuilder(request.uri.path.toString())
-            .tag("protocol", "http2->1")
-            .tag("component", "http-server")
-            .tag("http.method", request.method.value)
-            .tag("path", s"${request._2}")
+
+          val span = Kamon.serverSpanBuilder(request.uri.path.toString(), "httpserver")
+          span.context(Kamon.currentContext())
+          span.samplingDecision(SamplingDecision.Unknown)
           if (traceIdVal != "" && traceIdVal != "undefined" && traceIdVal != "null") {
             spanBuilder
               .traceId(Identifier.Scheme.Single.traceIdFactory.from(traceIdVal))
               .setParentId(parentSpanIdVal)
               .ignoreParentFromContext()
           }
+          SpanTagger.tag(span, TagKeys.HttpUrl, request._2.toString(), TagMode.Metric)
+          SpanTagger.tag(span, TagKeys.HttpMethod, request.method.value, TagMode.Metric)
         }
       }
 
@@ -375,6 +388,7 @@ object Http2BlueprintInterceptor {
           val response = handler(request)
           response.onComplete {
             case Success(r) => {
+              httpServerInstruments.countCompletedRequest(r.status.intValue())
               Kamon.currentSpan().finish()
             }
             case Failure(t) => Kamon.currentSpan().fail(t).finish()
