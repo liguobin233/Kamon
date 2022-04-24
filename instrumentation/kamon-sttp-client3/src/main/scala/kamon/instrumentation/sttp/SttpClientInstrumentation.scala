@@ -21,7 +21,6 @@ import scala.util.{ Failure, Success }
   */
 class SttpClientInstrumentation extends InstrumentationBuilder {
 
-  // intercept RequestT send
   onType("sttp.client3.HttpURLConnectionBackend")
     .intercept(method("send"), classOf[HttpURLConnectionBackendInterceptor])
 
@@ -45,10 +44,6 @@ object SttpClientInstrumentation {
     httpClientInstrumentation
   }
 
-  //  def getHandler[S <: Either[_,_]](request: Request[S, Any]): RequestHandler[Request[S, Any]] = {
-  //    httpClientInstrumentation.createHandler[Request[S, Any]](toRequestBuilder[S, Any](request), Kamon.currentContext())
-  //  }
-
   def getHandler[T, R](request: Request[T, R], span: Span): RequestHandler[Request[T, R]] = {
     httpClientInstrumentation.createHandler[Request[T, R]](toRequestBuilder[T, R](request),
       Kamon.currentContext().withEntry(Span.Key, span))
@@ -70,25 +65,6 @@ object SttpClientInstrumentation {
 
       override def build(): Request[T, R] = request.copy(headers = request.headers ++ _extraHeaders)
     }
-
-  //  def handleResponse[E, A, S <: Either[E, A]](response: Response[S], ex: Throwable, handler: RequestHandler[Request[S, Object]]): client3.Response[S] = {
-  //    if (ex != null) {
-  //      handler.span.fail(ex)
-  //    }
-  //    try {
-  //
-  //      handler.processResponse(toResponseBuilder(response))
-  //
-  //    } catch {
-  //      case e: Exception =>
-  //        handler.span.fail(e)
-  //        throw e
-  //    } finally {
-  //      handler.span.finish()
-  //    }
-  //
-  //    response
-  //  }
 
   def handleResponse[T, R](response: Response[T], handler: RequestHandler[Request[T, R]]): client3.Response[T] = {
     try {

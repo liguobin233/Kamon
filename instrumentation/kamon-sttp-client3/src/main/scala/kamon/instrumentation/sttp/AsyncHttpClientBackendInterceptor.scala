@@ -26,10 +26,9 @@ object AsyncHttpClientBackendInterceptor {
     val traceKey: Context.Key[String] = Context.key[String]("parentTraceId", "undefined")
     var traceIdVal: Option[String] = None
     var requestHandler: RequestHandler[Request[T, R]] = null
-    var zcall: Future[Response[T]] = null
-    arg match {
+    val response = arg match {
       case request: RequestT[Identity, T, R] =>
-        zcall = superCall.call()
+        val zcall = superCall.call()
         requestHandler = SttpClientInstrumentation.getHandler[T, R](request, Kamon.currentSpan())
         val traceId = request.headers.find(header => header.name == "traceid")
         val parentSpanId = request.headers.find(header => header.name == "spanid")
@@ -50,7 +49,7 @@ object AsyncHttpClientBackendInterceptor {
         })
         span = spanBuilder.start()
         Kamon.runWithContext(Kamon.currentContext().withEntry(Span.Key, span)) {
-
+          zcall
         }
       case x =>
         superCall.call()
@@ -58,7 +57,7 @@ object AsyncHttpClientBackendInterceptor {
 
     Kamon.runWithSpan(Kamon.currentSpan(), finishSpan = false) {
       Kamon.runWithContextEntry(traceKey, traceIdVal.getOrElse("undefined")) {
-        SttpClientInstrumentation.handleResponse[T, R](zcall, requestHandler)
+        SttpClientInstrumentation.handleResponse[T, R](response, requestHandler)
       }
     }
   }

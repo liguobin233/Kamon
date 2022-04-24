@@ -26,7 +26,7 @@ object HttpURLConnectionBackendInterceptor {
     var traceIdVal: Option[String] = None
     var requestHandler: RequestHandler[Request[T, R]] = null
     var zcall: Response[T] = null
-    arg match {
+    val response = arg match {
       case request: RequestT[Identity, T, R] =>
         zcall = superCall.call()
         requestHandler = SttpClientInstrumentation.getHandler[T, R](request, Kamon.currentSpan())
@@ -49,7 +49,7 @@ object HttpURLConnectionBackendInterceptor {
         })
         span = spanBuilder.start()
         Kamon.runWithContext(Kamon.currentContext().withEntry(Span.Key, span)) {
-
+          zcall
         }
       case x =>
         superCall.call()
@@ -57,7 +57,7 @@ object HttpURLConnectionBackendInterceptor {
 
     Kamon.runWithSpan(Kamon.currentSpan(), finishSpan = false) {
       Kamon.runWithContextEntry(traceKey, traceIdVal.getOrElse("undefined")) {
-        SttpClientInstrumentation.handleResponse[T, R](zcall, requestHandler)
+        SttpClientInstrumentation.handleResponse[T, R](response, requestHandler)
       }
     }
   }
