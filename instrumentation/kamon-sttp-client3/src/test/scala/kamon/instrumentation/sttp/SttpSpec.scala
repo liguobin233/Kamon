@@ -53,7 +53,7 @@ class SttpSpec extends AnyWordSpec with Matchers
         println(testSpanReporter().spans())
         val span = testSpanReporter().nextSpan()
         span.map { s =>
-          s.operationName shouldBe "/hello/{param1}"
+          s.operationName shouldBe "http://httpbin.org/ip"
         }
       }
     }
