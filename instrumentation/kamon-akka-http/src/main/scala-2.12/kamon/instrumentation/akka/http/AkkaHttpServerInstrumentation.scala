@@ -365,17 +365,17 @@ object Http2BlueprintInterceptor {
           traceIdVal = if (traceId.isDefined) traceId.get.value() else "undefined"
           parentSpanIdVal = if (parentSpanId.isDefined) Option(parentSpanId.get.value()) else Option.empty
 
-          val span = Kamon.serverSpanBuilder(request.uri.path.toString(), "httpserver")
-          span.context(Kamon.currentContext())
-          span.samplingDecision(SamplingDecision.Unknown)
+          spanBuilder = Kamon.serverSpanBuilder(request.uri.path.toString(), "httpserver")
+          spanBuilder.context(Kamon.currentContext())
+          spanBuilder.samplingDecision(SamplingDecision.Unknown)
           if (traceIdVal != "" && traceIdVal != "undefined" && traceIdVal != "null") {
             spanBuilder
               .traceId(Identifier.Scheme.Single.traceIdFactory.from(traceIdVal))
               .setParentId(parentSpanIdVal)
               .ignoreParentFromContext()
           }
-          SpanTagger.tag(span, TagKeys.HttpUrl, request._2.toString(), TagMode.Metric)
-          SpanTagger.tag(span, TagKeys.HttpMethod, request.method.value, TagMode.Metric)
+          SpanTagger.tag(spanBuilder, TagKeys.HttpUrl, request._2.toString(), TagMode.Metric)
+          SpanTagger.tag(spanBuilder, TagKeys.HttpMethod, request.method.value, TagMode.Metric)
         }
       }
 
