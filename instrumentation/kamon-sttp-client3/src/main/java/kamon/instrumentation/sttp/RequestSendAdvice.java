@@ -17,7 +17,6 @@
 package kamon.instrumentation.sttp;
 
 import kamon.Kamon;
-import kamon.context.Context;
 import kamon.context.Storage;
 import kamon.instrumentation.http.HttpClientInstrumentation.RequestHandler;
 import kamon.trace.Span;
