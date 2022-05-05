@@ -1,3 +1,5 @@
+import akka.grpc.gen.BuildInfo.akkaVersion
+
 /* =========================================================================================
  * Copyright © 2013-2021 the kamon project <http://kamon.io/>
  *
@@ -143,6 +145,7 @@ val instrumentationProjects = Seq[ProjectReference](
   `kamon-caffeine`,
   `kamon-lagom`,
   `kamon-finagle`,
+  `kamon-sttp-client3`,
 )
 
 lazy val instrumentation = (project in file("instrumentation"))
@@ -519,6 +522,24 @@ lazy val `kamon-okhttp` = (project in file("instrumentation/kamon-okhttp"))
     )
   ).dependsOn(`kamon-core`, `kamon-executors`, `kamon-testkit` % "test")
 
+lazy val `kamon-sttp-client3` = (project in file("instrumentation/kamon-sttp-client3"))
+  .disablePlugins(AssemblyPlugin)
+  .enablePlugins(JavaAgent)
+  .settings(
+    instrumentationSettings,
+    crossScalaVersions := Seq(
+      `scala_2.11_version`,
+      `scala_2.12_version`,
+      `scala_2.13_version`
+    ),
+    libraryDependencies ++= Seq(
+      kanelaAgent % "provided",
+      "com.softwaremill.sttp.client3" %% "core" % "3.3.0-RC2" % "provided",
+      scalatest % "test",
+      logbackClassic % "test",
+    )
+  ).dependsOn(`kamon-core`, `kamon-instrumentation-common`, `kamon-testkit` % "test")
+
 lazy val `kamon-tapir` = (project in file("instrumentation/kamon-tapir"))
   .disablePlugins(AssemblyPlugin)
   .enablePlugins(JavaAgent)
@@ -868,7 +889,9 @@ lazy val `kamon-bundle-dependencies-all` = (project in file("bundle/kamon-bundle
     `kamon-redis`,
     `kamon-okhttp`,
     `kamon-caffeine`,
-    `kamon-lagom`
+    `kamon-lagom`,
+    `kamon-sttp-client3`
+
   )
 
 /**

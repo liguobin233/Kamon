@@ -39,13 +39,18 @@ class AkkaHttpClientInstrumentation extends InstrumentationBuilder with VersionF
       .advise(method("singleRequestImpl"), classOf[HttpExtSingleRequestAdvice])
   }
 
+  onAkkaHttp("10.2") {
+    onType("akka.http.scaladsl.HttpExt")
+      .advise(method("singleRequest"), classOf[HttpExtSingleRequestAdvice])
+  }
+
   onType("akka.http.impl.engine.client.PoolMaster")
     .advise(method("dispatchRequest"), classOf[PoolMasterDispatchRequestAdvice])
 }
 
 object AkkaHttpClientInstrumentation {
 
-    @volatile var httpClientInstrumentation: HttpClientInstrumentation = rebuildHttpClientInstrumentation
+    @volatile var httpClientInstrumentation: HttpClientInstrumentation = rebuildHttpClientInstrumentation()
 
     private[http] def rebuildHttpClientInstrumentation(): HttpClientInstrumentation = {
       val httpClientConfig = Kamon.config().getConfig("kamon.instrumentation.akka.http.client")
