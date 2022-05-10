@@ -92,7 +92,7 @@ object GrpcHttpServerMetrics {
         .add(TagKeys.Component, component)
         .add(TagKeys.Interface, interface)
         .add(TagKeys.Port, port)
-        .add(TagKeys.RpcSystem, "akka.grpc")
+        .add(TagKeys.HttpServerUsage, "akka.grpc") // Calculate requests for akka-grpc separately.
         .build()
     )
 }

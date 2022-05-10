@@ -29,5 +29,5 @@ object TagKeys {
   val HttpStatusCode = "http.status_code"
   val HttpUrl = "http.url"
   val HttpMethod = "http.method"
-  val RpcSystem = "rpc.system"
+  val HttpServerUsage = "http.server.usage"
 }

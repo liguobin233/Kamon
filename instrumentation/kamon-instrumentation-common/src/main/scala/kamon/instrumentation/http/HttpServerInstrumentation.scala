@@ -19,6 +19,7 @@ package instrumentation
 package http
 
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
 
 import com.typesafe.config.Config
 import kamon.context.Context
@@ -210,7 +211,6 @@ object HttpServerInstrumentation {
     extends HttpServerInstrumentation {
 
     private val _metrics = if (settings.enableServerMetrics) Some(HttpServerMetrics.of(component, interface, port)) else None
-    private val _grpcMetrics = if (settings.enableServerMetrics) Some(GrpcHttpServerMetrics.of(component, interface, port)) else None
     private val _log = LoggerFactory.getLogger(classOf[Default])
     private val _propagation = Kamon.httpPropagation(settings.propagationChannel)
       .getOrElse {
@@ -218,12 +218,20 @@ object HttpServerInstrumentation {
         Kamon.defaultHttpPropagation()
       }
 
+    // Create grpc metrics at first processing.
+    private val isFirstInvoke = new AtomicBoolean(false)
+
+    @volatile var _grpcMetrics: Option[GrpcHttpServerMetrics.GrpcHttpServerInstruments] = None
+
     private def handleRequestMetric(headers: Map[String, String])
       (grpcMetricAction: GrpcHttpServerMetrics.GrpcHttpServerInstruments => scala.Unit,
         metricAction: HttpServerMetrics.HttpServerInstruments => scala.Unit
       ): Unit = {
-      val grpc = headers.exists(kv => kv._1 == "grpc-accept-encoding" && kv._2 == "gzip")
+      val grpc = headers.exists(_._1 == "grpc-accept-encoding")
       if (grpc) {
+        if (isFirstInvoke.compareAndSet(false, true)) {
+          _grpcMetrics = if (settings.enableServerMetrics) Some(GrpcHttpServerMetrics.of(component, interface, port)) else None
+        }
         _grpcMetrics.foreach { grpcHttpServerMetrics =>
           grpcMetricAction(grpcHttpServerMetrics)
         }
