@@ -227,7 +227,8 @@ object HttpServerInstrumentation {
       (grpcMetricAction: GrpcHttpServerMetrics.GrpcHttpServerInstruments => scala.Unit,
         metricAction: HttpServerMetrics.HttpServerInstruments => scala.Unit
       ): Unit = {
-      val grpc = headers.exists(_._1 == "grpc-accept-encoding")
+      // TODO other grpc
+      val grpc = headers.exists(_._1 == "grpc-accept-encoding") // akka grpc
       if (grpc) {
         if (isFirstInvoke.compareAndSet(false, true)) {
           _grpcMetrics = if (settings.enableServerMetrics) Some(GrpcHttpServerMetrics.of(component, interface, port)) else None
