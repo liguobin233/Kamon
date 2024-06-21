@@ -19,6 +19,7 @@ package instrumentation
 package http
 
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
 
 import com.typesafe.config.Config
 import kamon.context.Context
@@ -207,9 +208,9 @@ object HttpServerInstrumentation {
   private val _defaultHttpServerConfiguration = "kamon.instrumentation.http-server.default"
 
   private class Default(val settings: Settings, component: String, val interface: String, val port: Int)
-      extends HttpServerInstrumentation {
+    extends HttpServerInstrumentation {
 
-    private val _metrics = if(settings.enableServerMetrics) Some(HttpServerMetrics.of(component, interface, port)) else None
+    private val _metrics = if (settings.enableServerMetrics) Some(HttpServerMetrics.of(component, interface, port)) else None
     private val _log = LoggerFactory.getLogger(classOf[Default])
     private val _propagation = Kamon.httpPropagation(settings.propagationChannel)
       .getOrElse {
@@ -217,23 +218,46 @@ object HttpServerInstrumentation {
         Kamon.defaultHttpPropagation()
       }
 
+    // Create grpc metrics at first processing.
+    private val isFirstInvoke = new AtomicBoolean(false)
+
+    @volatile var _grpcMetrics: Option[GrpcHttpServerMetrics.GrpcHttpServerInstruments] = None
+
+    private def handleRequestMetric(headers: Map[String, String])
+      (grpcMetricAction: GrpcHttpServerMetrics.GrpcHttpServerInstruments => scala.Unit,
+        metricAction: HttpServerMetrics.HttpServerInstruments => scala.Unit
+      ): Unit = {
+      // TODO other grpc
+      val grpc = headers.exists(_._1 == "grpc-accept-encoding") // akka grpc
+      if (grpc) {
+        if (isFirstInvoke.compareAndSet(false, true)) {
+          _grpcMetrics = if (settings.enableServerMetrics) Some(GrpcHttpServerMetrics.of(component, interface, port)) else None
+        }
+        _grpcMetrics.foreach { grpcHttpServerMetrics =>
+          grpcMetricAction(grpcHttpServerMetrics)
+        }
+      } else {
+        _metrics.foreach { httpServerMetrics =>
+          metricAction(httpServerMetrics)
+        }
+      }
+    }
+
     override def createHandler(request: HttpMessage.Request, deferSamplingDecision: Boolean): RequestHandler = {
 
-      val incomingContext = if(settings.enableContextPropagation)
+      val incomingContext = if (settings.enableContextPropagation)
         _propagation.read(request)
       else Context.Empty
 
-      val requestSpan = if(settings.enableTracing)
+      val requestSpan = if (settings.enableTracing)
         buildServerSpan(incomingContext, request, deferSamplingDecision)
       else Span.Empty
 
-      val handlerContext = if(!requestSpan.isEmpty)
+      val handlerContext = if (!requestSpan.isEmpty)
         incomingContext.withEntry(Span.Key, requestSpan)
       else incomingContext
 
-      _metrics.foreach { httpServerMetrics =>
-        httpServerMetrics.activeRequests.increment()
-      }
+      handleRequestMetric(request.readAll())(_.activeRequests.increment(), _.activeRequests.increment())
 
       new HttpServerInstrumentation.RequestHandler {
         override def context: Context =
@@ -243,29 +267,24 @@ object HttpServerInstrumentation {
           requestSpan
 
         override def requestReceived(receivedBytes: Long): RequestHandler = {
-          if(receivedBytes >= 0) {
-            _metrics.foreach { httpServerMetrics =>
-              httpServerMetrics.requestSize.record(receivedBytes)
-            }
+          if (receivedBytes >= 0) {
+            handleRequestMetric(request.readAll())(_.requestSize.record(receivedBytes), _.requestSize.record(receivedBytes))
           }
 
           this
         }
 
         override def buildResponse[HttpResponse](response: HttpMessage.ResponseBuilder[HttpResponse], context: Context): HttpResponse = {
-          _metrics.foreach { httpServerMetrics =>
-            httpServerMetrics.countCompletedRequest(response.statusCode)
-          }
-
-          if(!span.isEmpty) {
+          handleRequestMetric(request.readAll())(_.countCompletedRequest(response.statusCode), _.countCompletedRequest(response.statusCode))
+          if (!span.isEmpty) {
             settings.traceIDResponseHeader.foreach(traceIDHeader => response.write(traceIDHeader, span.trace.id.string))
             settings.spanIDResponseHeader.foreach(spanIDHeader => response.write(spanIDHeader, span.id.string))
             settings.httpServerResponseHeaderGenerator.headers(handlerContext).foreach(header => response.write(header._1, header._2))
-            
+
             SpanTagger.tag(span, TagKeys.HttpStatusCode, response.statusCode, settings.statusCodeTagMode)
 
             val statusCode = response.statusCode
-            if(statusCode >= 500) {
+            if (statusCode >= 500) {
               span.fail("Request failed with HTTP Status Code " + response.statusCode)
             }
           }
@@ -274,13 +293,15 @@ object HttpServerInstrumentation {
         }
 
         override def responseSent(sentBytes: Long): Unit = {
-          _metrics.foreach { httpServerMetrics =>
+          handleRequestMetric(request.readAll())(grpcHttpServerMetrics => {
+            grpcHttpServerMetrics.activeRequests.decrement()
+            if (sentBytes >= 0)
+              grpcHttpServerMetrics.responseSize.record(sentBytes)
+          }, httpServerMetrics => {
             httpServerMetrics.activeRequests.decrement()
-
-            if(sentBytes >= 0)
+            if (sentBytes >= 0)
               httpServerMetrics.responseSize.record(sentBytes)
-          }
-
+          })
           span.finish()
         }
       }
@@ -293,19 +314,22 @@ object HttpServerInstrumentation {
     }
 
     override def connectionClosed(lifetime: Duration, handledRequests: Long): Unit = {
-      _metrics.foreach { httpServerMetrics =>
+      handleRequestMetric(Map.empty)(_ => (), httpServerMetrics => {
         httpServerMetrics.openConnections.decrement()
-
-        if(lifetime != Duration.ZERO)
+        if (lifetime != Duration.ZERO)
           httpServerMetrics.connectionLifetime.record(lifetime.toNanos)
 
-        if(handledRequests > 0)
+        if (handledRequests > 0)
           httpServerMetrics.connectionUsage.record(handledRequests)
-      }
+      })
+
     }
 
     override def shutdown(): Unit = {
       _metrics.foreach { httpServerMetrics =>
+        httpServerMetrics.remove()
+      }
+      _grpcMetrics.foreach { httpServerMetrics =>
         httpServerMetrics.remove()
       }
     }
@@ -315,15 +339,15 @@ object HttpServerInstrumentation {
       val span = Kamon.serverSpanBuilder(settings.operationNameSettings.operationName(request), component)
       span.context(context)
 
-      if(!settings.enableSpanMetrics)
+      if (!settings.enableSpanMetrics)
         span.doNotTrackMetrics()
 
-      if(deferSamplingDecision)
+      if (deferSamplingDecision)
         span.samplingDecision(SamplingDecision.Unknown)
 
-      for { traceIdTag <- settings.traceIDTag; customTraceID <- context.getTag(option(traceIdTag)) } {
+      for {traceIdTag <- settings.traceIDTag; customTraceID <- context.getTag(option(traceIdTag))} {
         val identifier = Kamon.identifierScheme.traceIdFactory.from(customTraceID)
-        if(!identifier.isEmpty)
+        if (!identifier.isEmpty)
           span.traceId(identifier)
       }
 
@@ -336,7 +360,6 @@ object HttpServerInstrumentation {
             .foreach(tagValue => SpanTagger.tag(span, tagName, tagValue, mode))
       }
 
-      
       span.start()
     }
   }
@@ -359,7 +382,7 @@ object HttpServerInstrumentation {
     unhandledOperationName: String,
     operationMappings: Map[Filter.Glob, String],
     operationNameGenerator: HttpOperationNameGenerator,
-    httpServerResponseHeaderGenerator:HttpServerResponseHeaderGenerator
+    httpServerResponseHeaderGenerator: HttpServerResponseHeaderGenerator
   ) {
     val operationNameSettings = OperationNameSettings(defaultOperationName, operationMappings, operationNameGenerator)
   }
@@ -367,7 +390,7 @@ object HttpServerInstrumentation {
   object Settings {
 
     def from(config: Config): Settings = {
-      def optionalString(value: String): Option[String] = if(value.equalsIgnoreCase("none")) None else Some(value)
+      def optionalString(value: String): Option[String] = if (value.equalsIgnoreCase("none")) None else Some(value)
 
       // Context propagation settings
       val enablePropagation = config.getBoolean("propagation.enabled")
@@ -400,7 +423,7 @@ object HttpServerInstrumentation {
           _log.warn("Failed to create an HTTP Server Response Header Generator, falling back to the default no-op", t)
           DefaultHttpServerResponseHeaderGenerator
       }
-      
+
       val defaultOperationName = config.getString("tracing.operations.default")
       val operationNameGenerator: Try[HttpOperationNameGenerator] = Try {
         config.getString("tracing.operations.name-generator") match {
